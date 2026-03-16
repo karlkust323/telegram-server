@@ -10,8 +10,8 @@ app.use((req, res, next) => {
   next();
 });
 
-const BOT_TOKEN  = '8681523916:AAEE2mpKPsdBk3UDG-qVyFDdkJIazKP_EBg';
-const MY_CHAT_ID = '7571759883';
+const BOT_TOKEN  = process.env.BOT_TOKEN;
+const MY_CHAT_ID = process.env.MY_CHAT_ID;
 
 app.post('/submit', async (req, res) => {
     console.log('Data received:', req.body);
