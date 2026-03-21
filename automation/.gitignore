@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.session
+state.json
+config.yaml
+automation.log
+exports/

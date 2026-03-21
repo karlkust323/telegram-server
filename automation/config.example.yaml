@@ -1,0 +1,76 @@
+# Telegram Automation Tool - Configuration
+# ------------------------------------------
+# Copy this file to config.yaml and fill in your values.
+# Get api_id and api_hash from https://my.telegram.org
+
+# --- Option A: Single account ---
+# api_id: 12345678
+# api_hash: "your_api_hash_here"
+# phone_number: "+1234567890"
+# session_name: "telegram_session"
+
+# --- Option B: Multiple accounts (rotation on rate-limit) ---
+# When one account hits FloodWaitError, the tool automatically
+# switches to the next account and keeps working.
+accounts:
+  - api_id: 12345678
+    api_hash: "your_api_hash_here"
+    phone_number: "+1234567890"
+    session_name: "session_account_1"
+  - api_id: 87654321
+    api_hash: "another_api_hash_here"
+    phone_number: "+0987654321"
+    session_name: "session_account_2"
+  # Add more accounts as needed:
+  # - api_id: ...
+  #   api_hash: "..."
+  #   phone_number: "+..."
+  #   session_name: "session_account_3"
+
+# --- Proxy per account (optional) ---
+# Add a "proxy" dict inside any account to route it through a proxy.
+# Supported types: socks5, socks4, http
+# Example:
+#   accounts:
+#     - api_id: 12345678
+#       api_hash: "your_hash"
+#       phone_number: "+1234567890"
+#       session_name: "session_1"
+#       proxy:
+#         type: socks5
+#         host: "127.0.0.1"
+#         port: 9050
+#         username: ""       # optional
+#         password: ""       # optional
+
+# Source chat: username (e.g. "@source_channel") or numeric ID
+source_chat: "@source_channel"
+
+# Target chat: username (e.g. "@target_group") or numeric ID
+target_chat: "@target_group"
+
+# Operation mode: "members" or "messages"
+mode: "members"
+
+# Delay in seconds between API calls (rate-limiting)
+delay_secs: 1.5
+
+# Maximum retries on transient errors before skipping
+max_retries: 3
+
+# Message forwarder options
+forward_media: false
+oldest_first: true
+
+# State file for resume capability
+state_file: "state.json"
+
+# --- Scheduled mode (optional) ---
+# Set schedule_minutes to run the tool on a recurring timer.
+# Omit or set to 0 for one-shot runs.
+# schedule_minutes: 30
+# max_runs: 0          # 0 = unlimited
+
+# --- Export settings ---
+# export_format: "both"    # json, csv, or both
+# export_dir: "exports"
