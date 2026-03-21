@@ -3,7 +3,7 @@ member_adder.py
 ---------------
 MemberAdder: fetches participants from a source group/channel and
 adds them one-by-one to a target group/channel, with resilience,
-rate-limiting, and resume support.
+rate-limiting, resume support, and multi-account rotation.
 """
 
 from __future__ import annotations
@@ -34,16 +34,20 @@ logger = logging.getLogger(__name__)
 class MemberAdder:
     """Scrape members from *source_chat* and add them to *target_chat*.
 
+    When multiple accounts are configured the adder automatically
+    rotates to the next account on FloodWaitError, allowing work to
+    continue without waiting.
+
     Parameters
     ----------
     client_manager:
-        An already-connected TelegramClientManager.
+        An already-connected TelegramClientManager (may hold 1+ accounts).
     config:
         Parsed configuration dict.
     """
 
     def __init__(self, client_manager: TelegramClientManager, config: dict[str, Any]) -> None:
-        self._client: TelegramClient = client_manager.get_client()
+        self._manager = client_manager
         self._source = config["source_chat"]
         self._target = config["target_chat"]
         self._resilience = ResilienceManager(
@@ -52,6 +56,13 @@ class MemberAdder:
         )
         self._progress = ProgressTracker()
         self._state = StateManager(config.get("state_file", "state.json"))
+
+    # -- helpers ---------------------------------------------------------------
+
+    @property
+    def _client(self) -> TelegramClient:
+        """Shortcut to the currently active client."""
+        return self._manager.get_client()
 
     # -- data fetching ---------------------------------------------------------
 
@@ -74,54 +85,70 @@ class MemberAdder:
     async def add_user(self, user: User) -> bool:
         """Invite *user* into the target chat.
 
+        On FloodWaitError with multiple accounts, rotates to the next
+        account and retries immediately.
+
         Returns True on success, False if the user was skipped.
         """
-        target_entity = await self._client.get_entity(self._target)
+        attempts = self._manager.account_count  # try each account at most once
 
-        async def _invite() -> None:
-            await self._client(InviteToChannelRequest(target_entity, [user]))
+        for attempt in range(attempts):
+            client = self._manager.get_client()
+            target_entity = await client.get_entity(self._target)
 
-        try:
-            await self._resilience.retry_with_backoff(_invite)
-            logger.info(
-                "Added user %s (id=%d) to %s",
-                user.first_name or user.username or "?",
-                user.id,
-                self._target,
-            )
-            return True
+            try:
+                await client(InviteToChannelRequest(target_entity, [user]))
+                logger.info(
+                    "Added user %s (id=%d) to %s",
+                    user.first_name or user.username or "?",
+                    user.id,
+                    self._target,
+                )
+                return True
 
-        except UserAlreadyParticipantError:
-            logger.debug("User %d already in target -- skipping", user.id)
-            return False
-        except UserPrivacyRestrictedError:
-            logger.warning("User %d has privacy restrictions -- skipping", user.id)
-            return False
-        except UserNotMutualContactError:
-            logger.warning("User %d is not a mutual contact -- skipping", user.id)
-            return False
-        except ChatAdminRequiredError:
-            logger.error("Admin rights required in target chat to add members")
-            return False
-        except ChannelPrivateError:
-            logger.error("Cannot access the target channel (private or banned)")
-            return False
-        except FloodWaitError as exc:
-            # If retry_with_backoff itself exhausted retries on flood, handle gracefully.
-            await self._resilience.handle_flood_wait(exc)
-            return False
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Unexpected error adding user %d: %s", user.id, exc)
-            return False
+            except FloodWaitError as exc:
+                if self._manager.account_count > 1 and attempt < attempts - 1:
+                    logger.warning(
+                        "Account %d hit FloodWaitError (%ds) -- rotating to next account",
+                        self._manager.get_current_index() + 1,
+                        exc.seconds,
+                    )
+                    self._manager.get_next_client()
+                    continue
+                # Single account or all accounts exhausted -- sleep it out.
+                await self._resilience.handle_flood_wait(exc)
+                return False
+
+            except UserAlreadyParticipantError:
+                logger.debug("User %d already in target -- skipping", user.id)
+                return False
+            except UserPrivacyRestrictedError:
+                logger.warning("User %d has privacy restrictions -- skipping", user.id)
+                return False
+            except UserNotMutualContactError:
+                logger.warning("User %d is not a mutual contact -- skipping", user.id)
+                return False
+            except ChatAdminRequiredError:
+                logger.error("Admin rights required in target chat to add members")
+                return False
+            except ChannelPrivateError:
+                logger.error("Cannot access the target channel (private or banned)")
+                return False
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Unexpected error adding user %d: %s", user.id, exc)
+                return False
+
+        return False
 
     # -- main loop -------------------------------------------------------------
 
     async def run(self) -> None:
         """Execute the member-addition workflow with progress and resume."""
         logger.info(
-            "Starting member adder for source %s -> target %s",
+            "Starting member adder for source %s -> target %s  (%d account(s))",
             self._source,
             self._target,
+            self._manager.account_count,
         )
 
         participants = await self.get_participants()

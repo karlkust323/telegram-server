@@ -3,7 +3,7 @@ message_forwarder.py
 --------------------
 MessageForwarder: fetches messages from a source chat and re-posts
 them (with metadata) into a target chat.  Supports resume, progress
-tracking, and optional media forwarding.
+tracking, optional media forwarding, and multi-account rotation.
 """
 
 from __future__ import annotations
@@ -49,16 +49,19 @@ def _format_reactions(message: Message) -> str:
 class MessageForwarder:
     """Fetch messages from *source_chat* and post them into *target_chat*.
 
+    When multiple accounts are configured the forwarder automatically
+    rotates to the next account on FloodWaitError.
+
     Parameters
     ----------
     client_manager:
-        An already-connected TelegramClientManager.
+        An already-connected TelegramClientManager (may hold 1+ accounts).
     config:
         Parsed configuration dict.
     """
 
     def __init__(self, client_manager: TelegramClientManager, config: dict[str, Any]) -> None:
-        self._client: TelegramClient = client_manager.get_client()
+        self._manager = client_manager
         self._source = config["source_chat"]
         self._target = config["target_chat"]
         self._forward_media: bool = config.get("forward_media", False)
@@ -69,6 +72,13 @@ class MessageForwarder:
         )
         self._progress = ProgressTracker()
         self._state = StateManager(config.get("state_file", "state.json"))
+
+    # -- helpers ---------------------------------------------------------------
+
+    @property
+    def _client(self) -> TelegramClient:
+        """Shortcut to the currently active client."""
+        return self._manager.get_client()
 
     # -- data fetching ---------------------------------------------------------
 
@@ -97,13 +107,11 @@ class MessageForwarder:
     async def forward_message(self, message: Message) -> bool:
         """Compose and send a single message into the target chat.
 
-        Text messages are re-sent with metadata header.  Media is
-        optionally downloaded and re-uploaded when *forward_media* is True.
+        On FloodWaitError with multiple accounts, rotates to the next
+        account and retries.
 
         Returns True on success, False on skip/failure.
         """
-        target_entity = await self._client.get_entity(self._target)
-
         # Build a metadata header for context.
         header_parts: list[str] = [
             f"[msg_id={message.id}]",
@@ -127,54 +135,63 @@ class MessageForwarder:
         body = message.text or ""
         full_text = f"{header}\n{body}".strip()
 
-        async def _send() -> None:
-            # If media forwarding is enabled and the message has media,
-            # download it and re-upload to the target.
-            if self._forward_media and message.media:
-                file_path = await self._client.download_media(message)
-                if file_path:
-                    await self._client.send_file(
-                        target_entity,
-                        file_path,
-                        caption=full_text,
+        attempts = self._manager.account_count
+
+        for attempt in range(attempts):
+            client = self._manager.get_client()
+            target_entity = await client.get_entity(self._target)
+
+            try:
+                if self._forward_media and message.media:
+                    file_path = await client.download_media(message)
+                    if file_path:
+                        await client.send_file(target_entity, file_path, caption=full_text)
+                        logger.info("Forwarding message ID %d (with media)", message.id)
+                        return True
+
+                if full_text:
+                    await client.send_message(target_entity, full_text)
+                    logger.info(
+                        "Forwarding message ID %d from %s to %s",
+                        message.id,
+                        self._source,
+                        self._target,
                     )
-                    return
+                return True
 
-            # Text-only (or media skipped).
-            if full_text:
-                await self._client.send_message(target_entity, full_text)
+            except FloodWaitError as exc:
+                if self._manager.account_count > 1 and attempt < attempts - 1:
+                    logger.warning(
+                        "Account %d hit FloodWaitError (%ds) -- rotating to next account",
+                        self._manager.get_current_index() + 1,
+                        exc.seconds,
+                    )
+                    self._manager.get_next_client()
+                    continue
+                await self._resilience.handle_flood_wait(exc)
+                return False
 
-        try:
-            await self._resilience.retry_with_backoff(_send)
-            logger.info(
-                "Forwarding message ID %d from %s to %s",
-                message.id,
-                self._source,
-                self._target,
-            )
-            return True
+            except ChatWriteForbiddenError:
+                logger.error("No write permission in target chat %s", self._target)
+                return False
+            except ChannelPrivateError:
+                logger.error("Cannot access target channel (private or banned)")
+                return False
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Error forwarding message %d: %s", message.id, exc)
+                return False
 
-        except ChatWriteForbiddenError:
-            logger.error("No write permission in target chat %s", self._target)
-            return False
-        except ChannelPrivateError:
-            logger.error("Cannot access target channel (private or banned)")
-            return False
-        except FloodWaitError as exc:
-            await self._resilience.handle_flood_wait(exc)
-            return False
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Error forwarding message %d: %s", message.id, exc)
-            return False
+        return False
 
     # -- main loop -------------------------------------------------------------
 
     async def run(self) -> None:
         """Execute the message-forwarding workflow with progress and resume."""
         logger.info(
-            "Starting message forwarder for source %s -> target %s",
+            "Starting message forwarder for source %s -> target %s  (%d account(s))",
             self._source,
             self._target,
+            self._manager.account_count,
         )
 
         messages = await self.get_messages()

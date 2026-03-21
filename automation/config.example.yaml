@@ -3,13 +3,29 @@
 # Copy this file to config.yaml and fill in your values.
 # Get api_id and api_hash from https://my.telegram.org
 
-# Telegram API credentials
-api_id: 12345678
-api_hash: "your_api_hash_here"
-phone_number: "+1234567890"
+# --- Option A: Single account ---
+# api_id: 12345678
+# api_hash: "your_api_hash_here"
+# phone_number: "+1234567890"
+# session_name: "telegram_session"
 
-# Session file name (Telethon stores auth state here)
-session_name: "telegram_session"
+# --- Option B: Multiple accounts (rotation on rate-limit) ---
+# When one account hits FloodWaitError, the tool automatically
+# switches to the next account and keeps working.
+accounts:
+  - api_id: 12345678
+    api_hash: "your_api_hash_here"
+    phone_number: "+1234567890"
+    session_name: "session_account_1"
+  - api_id: 87654321
+    api_hash: "another_api_hash_here"
+    phone_number: "+0987654321"
+    session_name: "session_account_2"
+  # Add more accounts as needed:
+  # - api_id: ...
+  #   api_hash: "..."
+  #   phone_number: "+..."
+  #   session_name: "session_account_3"
 
 # Source chat: username (e.g. "@source_channel") or numeric ID
 source_chat: "@source_channel"

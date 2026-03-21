@@ -154,7 +154,13 @@ def main() -> None:
         config["delay_secs"] = args.delay
 
     # Validate required keys.
-    for key in ("api_id", "api_hash", "phone_number", "source_chat", "target_chat", "mode"):
+    # Credentials can live at top level (single account) or inside "accounts" list.
+    has_accounts = "accounts" in config and isinstance(config.get("accounts"), list) and len(config["accounts"]) > 0
+    has_single = all(k in config for k in ("api_id", "api_hash", "phone_number"))
+    if not has_accounts and not has_single:
+        sys.exit("Config must provide either top-level api_id/api_hash/phone_number or an 'accounts' list")
+
+    for key in ("source_chat", "target_chat", "mode"):
         if key not in config:
             sys.exit(f"Missing required config key: {key}")
 
