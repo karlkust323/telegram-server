@@ -27,6 +27,22 @@ accounts:
   #   phone_number: "+..."
   #   session_name: "session_account_3"
 
+# --- Proxy per account (optional) ---
+# Add a "proxy" dict inside any account to route it through a proxy.
+# Supported types: socks5, socks4, http
+# Example:
+#   accounts:
+#     - api_id: 12345678
+#       api_hash: "your_hash"
+#       phone_number: "+1234567890"
+#       session_name: "session_1"
+#       proxy:
+#         type: socks5
+#         host: "127.0.0.1"
+#         port: 9050
+#         username: ""       # optional
+#         password: ""       # optional
+
 # Source chat: username (e.g. "@source_channel") or numeric ID
 source_chat: "@source_channel"
 
@@ -48,3 +64,13 @@ oldest_first: true
 
 # State file for resume capability
 state_file: "state.json"
+
+# --- Scheduled mode (optional) ---
+# Set schedule_minutes to run the tool on a recurring timer.
+# Omit or set to 0 for one-shot runs.
+# schedule_minutes: 30
+# max_runs: 0          # 0 = unlimited
+
+# --- Export settings ---
+# export_format: "both"    # json, csv, or both
+# export_dir: "exports"

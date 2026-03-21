@@ -2,14 +2,14 @@
 client_manager.py
 -----------------
 TelegramClientManager: owns one or more Telethon TelegramClient instances,
-handles authentication, session persistence, and clean shutdown.
+handles authentication, session persistence, proxy configuration, and
+clean shutdown.
 
 Supports two configuration styles:
   1. Single account  -- api_id / api_hash / phone_number at the top level.
   2. Multiple accounts -- an ``accounts`` list, each with its own credentials.
 
-When multiple accounts are configured, callers can rotate through them
-(e.g. when one hits a FloodWaitError) via get_next_client().
+Each account can optionally specify a ``proxy`` dict for SOCKS5/HTTP routing.
 """
 
 from __future__ import annotations
@@ -17,9 +17,47 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import socks  # PySocks -- required only when proxies are configured
 from telethon import TelegramClient
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_proxy(proxy_cfg: dict[str, Any] | None) -> tuple | None:
+    """Convert a proxy config dict into the tuple Telethon expects.
+
+    Expected dict format::
+
+        proxy:
+          type: socks5          # socks5 | socks4 | http
+          host: "127.0.0.1"
+          port: 9050
+          username: ""          # optional
+          password: ""          # optional
+
+    Returns None when no proxy is configured.
+    """
+    if not proxy_cfg:
+        return None
+
+    proxy_types = {
+        "socks5": socks.SOCKS5,
+        "socks4": socks.SOCKS4,
+        "http": socks.HTTP,
+    }
+    ptype = proxy_types.get(str(proxy_cfg.get("type", "socks5")).lower())
+    if ptype is None:
+        logger.warning("Unknown proxy type '%s' -- ignoring proxy", proxy_cfg.get("type"))
+        return None
+
+    host = str(proxy_cfg["host"])
+    port = int(proxy_cfg["port"])
+    username = proxy_cfg.get("username") or None
+    password = proxy_cfg.get("password") or None
+
+    # Telethon expects: (type, host, port, True, username, password)
+    # The 4th element (rdns) tells PySocks to resolve DNS remotely.
+    return (ptype, host, port, True, username, password)
 
 
 class TelegramClientManager:
@@ -31,6 +69,7 @@ class TelegramClientManager:
         Parsed YAML config dict.  Accepts either a single-account layout
         (api_id, api_hash, phone_number at top level) or a multi-account
         layout (an ``accounts`` list of dicts each containing those keys).
+        Each account may include a ``proxy`` dict.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -45,13 +84,13 @@ class TelegramClientManager:
         """Normalise config into a list of account dicts."""
         if "accounts" in config and isinstance(config["accounts"], list):
             return config["accounts"]
-        # Fallback: single-account config at top level.
         return [
             {
                 "api_id": config["api_id"],
                 "api_hash": config["api_hash"],
                 "phone_number": config["phone_number"],
                 "session_name": config.get("session_name", "telegram_session"),
+                "proxy": config.get("proxy"),
             }
         ]
 
@@ -63,18 +102,18 @@ class TelegramClientManager:
         return len(self._accounts)
 
     async def connect(self) -> None:
-        """Create clients for every configured account and authenticate them.
-
-        On first run for each account the user is prompted for the login
-        code sent via Telegram.
-        """
+        """Create clients for every configured account and authenticate them."""
         for idx, acct in enumerate(self._accounts):
             api_id = int(acct["api_id"])
             api_hash = str(acct["api_hash"])
             phone = str(acct["phone_number"])
             session = acct.get("session_name", f"telegram_session_{idx}")
+            proxy = _parse_proxy(acct.get("proxy"))
 
-            client = TelegramClient(session, api_id, api_hash)
+            if proxy:
+                logger.info("Account %d: using proxy %s:%s", idx + 1, proxy[1], proxy[2])
+
+            client = TelegramClient(session, api_id, api_hash, proxy=proxy)
             await client.connect()
 
             if not await client.is_user_authorized():
@@ -105,22 +144,13 @@ class TelegramClientManager:
         logger.info("All clients disconnected")
 
     def get_client(self) -> TelegramClient:
-        """Return the *current* active TelegramClient.
-
-        Raises RuntimeError if connect() has not been called.
-        """
+        """Return the *current* active TelegramClient."""
         if not self._clients:
             raise RuntimeError("No clients connected. Call connect() first.")
         return self._clients[self._current_index]
 
     def get_next_client(self) -> TelegramClient:
-        """Rotate to the next account and return its client.
-
-        Useful when the current account hits a FloodWaitError and you
-        want to continue work with a different account instead of sleeping.
-
-        If there is only one account this simply returns the same client.
-        """
+        """Rotate to the next account and return its client."""
         if not self._clients:
             raise RuntimeError("No clients connected. Call connect() first.")
         self._current_index = (self._current_index + 1) % len(self._clients)

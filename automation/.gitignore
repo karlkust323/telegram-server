@@ -4,3 +4,4 @@ __pycache__/
 state.json
 config.yaml
 automation.log
+exports/

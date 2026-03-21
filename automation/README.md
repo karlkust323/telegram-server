@@ -69,6 +69,10 @@ python main.py --mode messages
 | `--target-chat CHAT` | Override target chat |
 | `--delay SECS` | Override delay between API calls |
 | `--debug` | Enable verbose DEBUG logging |
+| `--schedule MINS` | Run on a recurring timer (minutes) |
+| `--max-runs N` | Stop after N scheduled runs (0 = unlimited) |
+| `--export-format FMT` | `json`, `csv`, or `both` (default: both) |
+| `--export-dir DIR` | Directory for exported files (default: exports) |
 
 ### Examples
 
@@ -89,6 +93,8 @@ The tool persists its progress in a JSON state file (`state.json` by default). I
 ```
 automation/
   main.py               # CLI entry point
+  exporter.py           # CSV/JSON export
+  scheduler.py          # Recurring timer
   client_manager.py     # Telethon session management
   member_adder.py       # Member-add workflow
   message_forwarder.py  # Message-forward workflow
@@ -118,6 +124,61 @@ accounts:
 Each account needs its own API credentials from https://my.telegram.org and must be a member of both source and target chats. When account 1 gets rate-limited, the tool instantly switches to account 2 instead of sleeping. Single-account config still works as before.
 
 See [SETUP_GUIDE.md](SETUP_GUIDE.md) (Step 5B) for detailed instructions.
+
+## Export Mode
+
+Scrape members or messages to local CSV/JSON files without forwarding anything:
+
+```bash
+# Export members to both CSV and JSON
+python main.py --mode export-members --source-chat @my_channel
+
+# Export messages to CSV only
+python main.py --mode export-messages --source-chat @my_channel --export-format csv
+
+# Custom output directory
+python main.py --mode export-members --export-dir ./my_exports
+```
+
+Files are saved to the `exports/` directory by default.
+
+## Scheduled Mode
+
+Run the tool on a recurring timer instead of one-shot:
+
+```bash
+# Sync new messages every 30 minutes
+python main.py --mode messages --schedule 30
+
+# Add members every 60 minutes, stop after 5 runs
+python main.py --mode members --schedule 60 --max-runs 5
+```
+
+## Proxy Support
+
+Route each account through a different SOCKS5/HTTP proxy to reduce IP-based rate limiting. Add a `proxy` block inside any account in your config:
+
+```yaml
+accounts:
+  - api_id: 12345678
+    api_hash: "hash_1"
+    phone_number: "+1111111111"
+    session_name: "session_1"
+    proxy:
+      type: socks5
+      host: "127.0.0.1"
+      port: 9050
+  - api_id: 87654321
+    api_hash: "hash_2"
+    phone_number: "+2222222222"
+    session_name: "session_2"
+    proxy:
+      type: socks5
+      host: "127.0.0.1"
+      port: 9051
+```
+
+Supported proxy types: `socks5`, `socks4`, `http`. Username/password fields are optional.
 
 ## Rate Limiting and Resilience
 
