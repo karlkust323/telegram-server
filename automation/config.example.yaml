@@ -1,0 +1,34 @@
+# Telegram Automation Tool - Configuration
+# ------------------------------------------
+# Copy this file to config.yaml and fill in your values.
+# Get api_id and api_hash from https://my.telegram.org
+
+# Telegram API credentials
+api_id: 12345678
+api_hash: "your_api_hash_here"
+phone_number: "+1234567890"
+
+# Session file name (Telethon stores auth state here)
+session_name: "telegram_session"
+
+# Source chat: username (e.g. "@source_channel") or numeric ID
+source_chat: "@source_channel"
+
+# Target chat: username (e.g. "@target_group") or numeric ID
+target_chat: "@target_group"
+
+# Operation mode: "members" or "messages"
+mode: "members"
+
+# Delay in seconds between API calls (rate-limiting)
+delay_secs: 1.5
+
+# Maximum retries on transient errors before skipping
+max_retries: 3
+
+# Message forwarder options
+forward_media: false
+oldest_first: true
+
+# State file for resume capability
+state_file: "state.json"
