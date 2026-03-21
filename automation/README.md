@@ -99,6 +99,26 @@ automation/
   requirements.txt      # Python dependencies
 ```
 
+## Multi-Account Rotation
+
+For higher throughput, configure multiple Telegram accounts. The tool rotates between them when one hits a rate limit:
+
+```yaml
+accounts:
+  - api_id: 11111111
+    api_hash: "hash_1"
+    phone_number: "+1111111111"
+    session_name: "session_account_1"
+  - api_id: 22222222
+    api_hash: "hash_2"
+    phone_number: "+2222222222"
+    session_name: "session_account_2"
+```
+
+Each account needs its own API credentials from https://my.telegram.org and must be a member of both source and target chats. When account 1 gets rate-limited, the tool instantly switches to account 2 instead of sleeping. Single-account config still works as before.
+
+See [SETUP_GUIDE.md](SETUP_GUIDE.md) (Step 5B) for detailed instructions.
+
 ## Rate Limiting and Resilience
 
 - Configurable delay between every API call (`delay_secs`).

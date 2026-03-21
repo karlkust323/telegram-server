@@ -181,6 +181,76 @@ state_file: "state.json"
 
 ---
 
+## Step 5B: Setting Up Multiple Accounts (Optional)
+
+If you want to use multiple Telegram accounts for faster operation (the tool rotates between them when one hits a rate limit), you can configure an `accounts` list instead of a single account.
+
+**Why use multiple accounts?**
+
+- Each Telegram account has a daily limit of roughly 30-50 member additions
+- With 3 accounts, you can effectively add ~90-150 members per day
+- When account 1 hits a FloodWaitError, the tool instantly switches to account 2 instead of sleeping
+
+**Requirements for each account:**
+
+- Each account needs its own phone number (a real Telegram account)
+- Each account needs its own api_id and api_hash from https://my.telegram.org
+- Each account must be a member of both the source and target chats
+- Each account must have admin rights in the target chat (for member-adding mode)
+
+**How to set it up:**
+
+1. For each phone number, go to https://my.telegram.org, log in, and create an API application (same process as Step 4). Note down each api_id and api_hash.
+
+2. Edit your `config.yaml` to use the `accounts` list format:
+
+```yaml
+accounts:
+  - api_id: 11111111
+    api_hash: "hash_for_account_1"
+    phone_number: "+1111111111"
+    session_name: "session_account_1"
+  - api_id: 22222222
+    api_hash: "hash_for_account_2"
+    phone_number: "+2222222222"
+    session_name: "session_account_2"
+  - api_id: 33333333
+    api_hash: "hash_for_account_3"
+    phone_number: "+3333333333"
+    session_name: "session_account_3"
+
+# The rest of the config stays the same
+source_chat: "@source_channel"
+target_chat: "@target_group"
+mode: "members"
+delay_secs: 1.5
+max_retries: 3
+```
+
+3. On first run, the tool will prompt you for the login code for **each account** one at a time:
+
+```
+Enter the code sent to +1111111111 (account 1): 12345
+Enter the code sent to +2222222222 (account 2): 67890
+Enter the code sent to +3333333333 (account 3): 11111
+```
+
+After that, each account's session is saved separately and you won't be prompted again.
+
+**How rotation works:**
+
+- The tool starts working with account 1
+- When account 1 gets a FloodWaitError (rate limit), it immediately switches to account 2
+- If account 2 also gets rate-limited, it switches to account 3
+- Only when ALL accounts are rate-limited does it sleep through the wait
+- This means the tool can keep working almost continuously
+
+**Single account is still fine:**
+
+If you only have one account, just use the simple format from Step 5. The tool works exactly the same way -- it just can't rotate when rate-limited.
+
+---
+
 ## Step 6: First Run -- Authentication
 
 The first time you run the tool, Telethon needs to authenticate with your Telegram account. This is a one-time process.
