@@ -353,7 +353,136 @@ This is the original message text that was in the source chat.
 
 ---
 
-## Step 9: Using CLI Overrides
+## Step 9: Exporting Data to CSV/JSON
+
+Instead of forwarding messages or adding members, you can export the raw data to local files for backup or analysis.
+
+**Export members:**
+
+```bash
+# Export to both CSV and JSON (default)
+python3 main.py --mode export-members
+
+# Export to CSV only
+python3 main.py --mode export-members --export-format csv
+
+# Export to a custom directory
+python3 main.py --mode export-members --export-dir ./my_backups
+```
+
+**Export messages:**
+
+```bash
+python3 main.py --mode export-messages
+python3 main.py --mode export-messages --export-format json
+```
+
+**What you get:**
+
+Files are saved to the `exports/` directory (or your custom `--export-dir`). For example:
+
+- `exports/members_20240115_103000.json` -- JSON array of all members with user_id, name, username, etc.
+- `exports/members_20240115_103000.csv` -- same data as a spreadsheet-friendly CSV
+- `exports/messages_20240115_103500.json` -- JSON array of all messages with text, date, sender, reactions, etc.
+- `exports/messages_20240115_103500.csv` -- same data as CSV
+
+This is useful for:
+- Creating backups before making changes
+- Analyzing member overlap between groups
+- Feeding data into spreadsheets or research tools
+- Keeping a local archive of channel content
+
+---
+
+## Step 10: Setting Up Proxies (Optional)
+
+If you want to route each account through a different proxy (to reduce IP-based rate limiting), add a `proxy` block inside any account in your config.
+
+**Edit `config.yaml`:**
+
+```yaml
+accounts:
+  - api_id: 11111111
+    api_hash: "hash_1"
+    phone_number: "+1111111111"
+    session_name: "session_1"
+    proxy:
+      type: socks5       # socks5, socks4, or http
+      host: "127.0.0.1"
+      port: 9050
+      # username: ""     # optional, for authenticated proxies
+      # password: ""     # optional
+  - api_id: 22222222
+    api_hash: "hash_2"
+    phone_number: "+2222222222"
+    session_name: "session_2"
+    proxy:
+      type: socks5
+      host: "127.0.0.1"
+      port: 9051
+```
+
+**Where to get proxies:**
+
+- Run your own SOCKS5 proxy via SSH: `ssh -D 9050 user@server` creates a local SOCKS5 proxy on port 9050
+- Use a VPN provider that offers SOCKS5 endpoints
+- Commercial proxy services (residential proxies are less likely to be blocked)
+
+**When to use proxies:**
+
+- When running multiple accounts from the same machine
+- When your IP has been temporarily restricted by Telegram
+- When operating from a region with Telegram restrictions
+
+No proxy is needed for single-account usage with normal rate limits.
+
+---
+
+## Step 11: Running on a Schedule (Optional)
+
+Instead of running the tool manually each time, you can set it to repeat on a timer.
+
+**Sync messages every 30 minutes:**
+
+```bash
+python3 main.py --mode messages --schedule 30
+```
+
+**Add new members every 2 hours, stop after 5 runs:**
+
+```bash
+python3 main.py --mode members --schedule 120 --max-runs 5
+```
+
+**What happens:**
+
+```
+2024-01-15 10:30:00 [INFO] scheduler: Scheduler started: interval=30.0 min, max_runs=unlimited
+2024-01-15 10:30:00 [INFO] scheduler: starting run 1
+... (tool runs normally) ...
+2024-01-15 10:32:00 [INFO] scheduler: sleeping 30.0 minutes before next run...
+2024-01-15 11:02:00 [INFO] scheduler: starting run 2
+... (picks up only new items thanks to resume state) ...
+```
+
+The scheduler:
+- Runs the job immediately on start, then sleeps between runs
+- Uses the resume state, so each run only processes new/unprocessed items
+- Logs each run cycle clearly
+- Stops gracefully after `--max-runs` if set (0 = unlimited)
+
+To stop a running scheduler, press Ctrl+C. The progress is saved and you can restart any time.
+
+**You can also set this in config.yaml** instead of CLI:
+
+```yaml
+schedule_minutes: 30
+max_runs: 0    # 0 = unlimited
+```
+
+---
+
+## Step 12: Using CLI Overrides
 
 You don't have to edit `config.yaml` every time you want to change settings. You can override them from the command line:
 
@@ -389,7 +518,7 @@ python3 main.py --help
 
 ---
 
-## Step 10: Troubleshooting Common Issues
+## Step 13: Troubleshooting Common Issues
 
 ### "FloodWaitError: sleeping for X seconds"
 
@@ -448,4 +577,9 @@ Or open it in a text editor.
 | Debug logging | `python3 main.py --mode messages --debug` |
 | Reset progress | `rm state.json` |
 | View logs | `cat automation.log` |
+| Export members | `python3 main.py --mode export-members` |
+| Export messages | `python3 main.py --mode export-messages` |
+| Export CSV only | `python3 main.py --mode export-members --export-format csv` |
+| Schedule every 30 min | `python3 main.py --mode messages --schedule 30` |
+| Schedule with limit | `python3 main.py --mode members --schedule 60 --max-runs 5` |
 | See help | `python3 main.py --help` |
